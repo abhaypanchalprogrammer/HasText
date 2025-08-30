@@ -20,22 +20,24 @@ const Room = () => {
   const { roomCode } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
+
   const [roomData, setRoomData] = useState<any>(null);
   const [content, setContent] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [loading, setLoading] = useState(true);
 
+  // ✅ Load initial data + subscribe to realtime changes
   useEffect(() => {
     if (roomCode && user) {
       loadRoom(roomCode);
 
-      // ✅ Subscribe to real-time updates
+      // Realtime subscription
       const channel = supabase
-        .channel("room-changes")
+        .channel(`room-changes-${roomCode}`)
         .on(
           "postgres_changes",
           {
-            event: "UPDATE",
+            event: "*", // listen to INSERT + UPDATE + DELETE
             schema: "public",
             table: "rooms",
             filter: `code=eq.${roomCode}`,
@@ -65,9 +67,7 @@ const Room = () => {
         .eq("code", code)
         .single();
 
-      if (error && error.code !== "PGRST116") {
-        throw error;
-      }
+      if (error && error.code !== "PGRST116") throw error;
 
       if (room) {
         setRoomData(room);
@@ -79,7 +79,6 @@ const Room = () => {
           variant: "destructive",
         });
         navigate("/dashboard");
-        return;
       }
     } catch (error) {
       console.error("Error loading room:", error);
@@ -96,7 +95,6 @@ const Room = () => {
 
   const handleSave = async () => {
     if (!user || !roomCode) return;
-
     setIsSaving(true);
 
     try {
@@ -104,13 +102,14 @@ const Room = () => {
         .from("rooms")
         .update({
           content,
-          editor_email: user.email, // ✅ record who edited
+          editor_email: user.email,
           updated_at: new Date().toISOString(),
         })
         .eq("code", roomCode);
 
       if (error) throw error;
 
+      // ⚡ Don't update state here – realtime will update automatically
       toast({
         title: "Saved successfully",
         description: "Your text has been saved to the room",
