@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react"; // 👈 useRef add kiya
 import { useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/lib/supabase";
@@ -25,12 +25,14 @@ const Room = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [loading, setLoading] = useState(true);
 
+  const isRemoteUpdate = useRef(false); // 👈 remote update flag
+
   useEffect(() => {
     if (roomCode && user) {
       loadRoom(roomCode);
 
-      // ✅ Subscribe to real-time updates
-      const channel = supabase
+      // ✅ Postgres DB changes (already tha)
+      const dbChannel = supabase
         .channel("room-changes")
         .on(
           "postgres_changes",
@@ -49,8 +51,23 @@ const Room = () => {
         )
         .subscribe();
 
+      // ✅ Live typing broadcast channel
+      const liveChannel = supabase.channel(`room-${roomCode}`, {
+        config: { broadcast: { self: true } },
+      });
+
+      liveChannel.on("broadcast", { event: "content-update" }, ({ payload }) => {
+        if (payload?.content !== undefined) {
+          isRemoteUpdate.current = true;
+          setContent(payload.content);
+        }
+      });
+
+      liveChannel.subscribe();
+
       return () => {
-        supabase.removeChannel(channel);
+        supabase.removeChannel(dbChannel);
+        supabase.removeChannel(liveChannel);
       };
     }
   }, [roomCode, user]);
@@ -94,6 +111,26 @@ const Room = () => {
     }
   };
 
+  // ✅ Live typing handle
+  const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const newValue = e.target.value;
+
+    if (isRemoteUpdate.current) {
+      isRemoteUpdate.current = false;
+      setContent(newValue);
+      return;
+    }
+
+    setContent(newValue);
+
+    // broadcast to others
+    supabase.channel(`room-${roomCode}`).send({
+      type: "broadcast",
+      event: "content-update",
+      payload: { content: newValue },
+    });
+  };
+
   const handleSave = async () => {
     if (!user || !roomCode) return;
 
@@ -104,7 +141,7 @@ const Room = () => {
         .from("rooms")
         .update({
           content,
-          editor_email: user.email, // ✅ record who edited
+          editor_email: user.email,
           updated_at: new Date().toISOString(),
         })
         .eq("code", roomCode);
@@ -281,7 +318,7 @@ const Room = () => {
             <CardContent>
               <Textarea
                 value={content}
-                onChange={(e) => setContent(e.target.value)}
+                onChange={handleChange}  // 👈 yaha sirf handleChange lagaya
                 placeholder="Start typing or paste your text here..."
                 className="min-h-[500px] font-mono text-sm resize-none border-0 focus:ring-0 bg-editor-bg"
                 style={{
