@@ -28,6 +28,30 @@ const Room = () => {
   useEffect(() => {
     if (roomCode && user) {
       loadRoom(roomCode);
+
+      // ✅ Subscribe to real-time updates
+      const channel = supabase
+        .channel("room-changes")
+        .on(
+          "postgres_changes",
+          {
+            event: "UPDATE",
+            schema: "public",
+            table: "rooms",
+            filter: `code=eq.${roomCode}`,
+          },
+          (payload) => {
+            if (payload.new) {
+              setRoomData(payload.new);
+              setContent(payload.new.content || "");
+            }
+          }
+        )
+        .subscribe();
+
+      return () => {
+        supabase.removeChannel(channel);
+      };
     }
   }, [roomCode, user]);
 
@@ -51,8 +75,7 @@ const Room = () => {
       } else {
         toast({
           title: "Room not found",
-          description:
-            "This room doesn't exist or you don't have access to it.",
+          description: "This room doesn't exist or you don't have access to it.",
           variant: "destructive",
         });
         navigate("/dashboard");
@@ -81,7 +104,7 @@ const Room = () => {
         .from("rooms")
         .update({
           content,
-          editor_email: user.email, // ✅ save editor’s email
+          editor_email: user.email, // ✅ record who edited
           updated_at: new Date().toISOString(),
         })
         .eq("code", roomCode);
@@ -92,14 +115,6 @@ const Room = () => {
         title: "Saved successfully",
         description: "Your text has been saved to the room",
       });
-
-      // Update local room data
-      setRoomData((prev: any) => ({
-        ...prev,
-        content,
-        editor_email: user.email,
-        updated_at: new Date().toISOString(),
-      }));
     } catch (error) {
       console.error("Error saving room:", error);
       toast({
@@ -119,7 +134,7 @@ const Room = () => {
         title: "Copied to clipboard",
         description: "Text has been copied to your clipboard",
       });
-    } catch (error) {
+    } catch {
       toast({
         title: "Copy failed",
         description: "Unable to copy text to clipboard",
@@ -153,7 +168,7 @@ const Room = () => {
         title: "Room link copied",
         description: "Share this link to invite others to the room",
       });
-    } catch (error) {
+    } catch {
       toast({
         title: "Share failed",
         description: "Unable to copy room link",
