@@ -304,17 +304,54 @@ const Room = () => {
       <main className="container mx-auto px-6 py-8">
         <div className="max-w-6xl mx-auto">
           <Card className="min-h-[600px]">
-            <CardHeader className="pb-4">
-              <div className="flex items-center justify-between">
-                <CardTitle className="flex items-center space-x-2">
-                  <Users className="h-5 w-5" />
-                  <span>Collaborative Text Editor</span>
-                </CardTitle>
-                <div className="text-sm text-muted-foreground">
-                  {content.length} characters
-                </div>
-              </div>
-            </CardHeader>
+           <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+  {/* Left side: Dashboard + Room Code */}
+  <div className="flex items-center gap-2 w-full sm:w-auto">
+    <Button variant="ghost" onClick={() => navigate("/")}>
+      <ArrowLeft className="mr-2 h-4 w-4" /> Dashboard
+    </Button>
+    {roomCode && (
+      <span className="px-2 py-1 bg-gray-200 text-gray-800 rounded-md text-sm font-mono truncate max-w-[150px] sm:max-w-none">
+        Code: {roomCode}
+      </span>
+    )}
+  </div>
+
+  {/* Right side: buttons */}
+  <div className="hidden sm:flex items-center gap-2">
+    <Button variant="outline" onClick={handleCopy}>
+      <Copy className="mr-2 h-4 w-4" /> Copy
+    </Button>
+    <Button variant="outline" onClick={handleDownload}>
+      <Download className="mr-2 h-4 w-4" /> Download
+    </Button>
+    <Button variant="default" onClick={handleSave}>
+      <Save className="mr-2 h-4 w-4" /> Save
+    </Button>
+  </div>
+
+  {/* Mobile: dropdown menu */}
+  <div className="sm:hidden flex items-center">
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="outline" size="icon">
+          <MoreVertical className="h-5 w-5" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem onClick={handleCopy}>
+          <Copy className="mr-2 h-4 w-4" /> Copy
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={handleDownload}>
+          <Download className="mr-2 h-4 w-4" /> Download
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={handleSave}>
+          <Save className="mr-2 h-4 w-4" /> Save
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  </div>
+</CardHeader>
             <CardContent>
               <Textarea
                 value={content}
