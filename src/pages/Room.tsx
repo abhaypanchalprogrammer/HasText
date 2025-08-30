@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react"; // 👈 useRef add kiya
+import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/lib/supabase";
@@ -25,14 +25,12 @@ const Room = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  const isRemoteUpdate = useRef(false); // 👈 remote update flag
-
   useEffect(() => {
     if (roomCode && user) {
       loadRoom(roomCode);
 
-      // ✅ Postgres DB changes (already tha)
-      const dbChannel = supabase
+      // ✅ Subscribe to real-time updates
+      const channel = supabase
         .channel("room-changes")
         .on(
           "postgres_changes",
@@ -51,23 +49,8 @@ const Room = () => {
         )
         .subscribe();
 
-      // ✅ Live typing broadcast channel
-      const liveChannel = supabase.channel(`room-${roomCode}`, {
-        config: { broadcast: { self: true } },
-      });
-
-      liveChannel.on("broadcast", { event: "content-update" }, ({ payload }) => {
-        if (payload?.content !== undefined) {
-          isRemoteUpdate.current = true;
-          setContent(payload.content);
-        }
-      });
-
-      liveChannel.subscribe();
-
       return () => {
-        supabase.removeChannel(dbChannel);
-        supabase.removeChannel(liveChannel);
+        supabase.removeChannel(channel);
       };
     }
   }, [roomCode, user]);
@@ -111,26 +94,6 @@ const Room = () => {
     }
   };
 
-  // ✅ Live typing handle
-  const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const newValue = e.target.value;
-
-    if (isRemoteUpdate.current) {
-      isRemoteUpdate.current = false;
-      setContent(newValue);
-      return;
-    }
-
-    setContent(newValue);
-
-    // broadcast to others
-    supabase.channel(`room-${roomCode}`).send({
-      type: "broadcast",
-      event: "content-update",
-      payload: { content: newValue },
-    });
-  };
-
   const handleSave = async () => {
     if (!user || !roomCode) return;
 
@@ -141,7 +104,7 @@ const Room = () => {
         .from("rooms")
         .update({
           content,
-          editor_email: user.email,
+          editor_email: user.email, // ✅ record who edited
           updated_at: new Date().toISOString(),
         })
         .eq("code", roomCode);
@@ -232,68 +195,72 @@ const Room = () => {
     <div className="min-h-screen bg-background">
       {/* Header */}
       <header className="border-b border-border bg-card sticky top-0 z-10">
-        <div className="container mx-auto px-6 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-4">
+        <div className="container mx-auto px-4 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            {/* Left side */}
+            <div className="flex flex-wrap items-center gap-3">
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={() => navigate("/dashboard")}
-                className="flex items-center space-x-2"
+                className="flex items-center gap-2"
               >
                 <ArrowLeft className="h-4 w-4" />
                 <span>Dashboard</span>
               </Button>
-              <div className="flex items-center space-x-2">
+              <div className="flex items-center gap-2">
                 <Code className="h-6 w-6 text-primary" />
                 <div>
-                  <h1 className="text-xl font-semibold text-foreground">
+                  <h1 className="text-lg font-semibold text-foreground truncate max-w-[180px] sm:max-w-xs">
                     {roomData.name}
                   </h1>
-                  <p className="text-sm text-muted-foreground">
+                  <p className="text-xs text-muted-foreground">
                     Room Code: {roomCode}
                   </p>
                 </div>
               </div>
             </div>
 
-            <div className="flex items-center space-x-2">
+            {/* Right side */}
+            <div className="flex flex-wrap items-center gap-2">
               <Button
                 variant="outline"
                 size="sm"
                 onClick={handleShare}
-                className="flex items-center space-x-2"
+                className="flex items-center gap-2"
               >
                 <Share2 className="h-4 w-4" />
-                <span>Share</span>
+                <span className="hidden sm:inline">Share</span>
               </Button>
               <Button
                 variant="outline"
                 size="sm"
                 onClick={handleCopy}
                 disabled={!content}
-                className="flex items-center space-x-2"
+                className="flex items-center gap-2"
               >
                 <Copy className="h-4 w-4" />
-                <span>Copy</span>
+                <span className="hidden sm:inline">Copy</span>
               </Button>
               <Button
                 variant="outline"
                 size="sm"
                 onClick={handleDownload}
                 disabled={!content}
-                className="flex items-center space-x-2"
+                className="flex items-center gap-2"
               >
                 <Download className="h-4 w-4" />
-                <span>Download</span>
+                <span className="hidden sm:inline">Download</span>
               </Button>
               <Button
                 onClick={handleSave}
                 disabled={isSaving}
-                className="flex items-center space-x-2"
+                className="flex items-center gap-2"
               >
                 <Save className="h-4 w-4" />
-                <span>{isSaving ? "Saving..." : "Save"}</span>
+                <span className="hidden sm:inline">
+                  {isSaving ? "Saving..." : "Save"}
+                </span>
               </Button>
             </div>
           </div>
@@ -304,58 +271,21 @@ const Room = () => {
       <main className="container mx-auto px-6 py-8">
         <div className="max-w-6xl mx-auto">
           <Card className="min-h-[600px]">
-           <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-  {/* Left side: Dashboard + Room Code */}
-  <div className="flex items-center gap-2 w-full sm:w-auto">
-    <Button variant="ghost" onClick={() => navigate("/")}>
-      <ArrowLeft className="mr-2 h-4 w-4" /> Dashboard
-    </Button>
-    {roomCode && (
-      <span className="px-2 py-1 bg-gray-200 text-gray-800 rounded-md text-sm font-mono truncate max-w-[150px] sm:max-w-none">
-        Code: {roomCode}
-      </span>
-    )}
-  </div>
-
-  {/* Right side: buttons */}
-  <div className="hidden sm:flex items-center gap-2">
-    <Button variant="outline" onClick={handleCopy}>
-      <Copy className="mr-2 h-4 w-4" /> Copy
-    </Button>
-    <Button variant="outline" onClick={handleDownload}>
-      <Download className="mr-2 h-4 w-4" /> Download
-    </Button>
-    <Button variant="default" onClick={handleSave}>
-      <Save className="mr-2 h-4 w-4" /> Save
-    </Button>
-  </div>
-
-  {/* Mobile: dropdown menu */}
-  <div className="sm:hidden flex items-center">
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="outline" size="icon">
-          <MoreVertical className="h-5 w-5" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuItem onClick={handleCopy}>
-          <Copy className="mr-2 h-4 w-4" /> Copy
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={handleDownload}>
-          <Download className="mr-2 h-4 w-4" /> Download
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={handleSave}>
-          <Save className="mr-2 h-4 w-4" /> Save
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  </div>
-</CardHeader>
+            <CardHeader className="pb-4">
+              <div className="flex items-center justify-between">
+                <CardTitle className="flex items-center gap-2">
+                  <Users className="h-5 w-5" />
+                  <span>Collaborative Text Editor</span>
+                </CardTitle>
+                <div className="text-sm text-muted-foreground">
+                  {content.length} characters
+                </div>
+              </div>
+            </CardHeader>
             <CardContent>
               <Textarea
                 value={content}
-                onChange={handleChange}  // 👈 yaha sirf handleChange lagaya
+                onChange={(e) => setContent(e.target.value)}
                 placeholder="Start typing or paste your text here..."
                 className="min-h-[500px] font-mono text-sm resize-none border-0 focus:ring-0 bg-editor-bg"
                 style={{
